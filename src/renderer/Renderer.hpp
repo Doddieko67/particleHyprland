@@ -11,6 +11,7 @@
 #include "../config/ConfigDataValues.hpp"
 #include "widgets/IWidget.hpp"
 #include "Framebuffer.hpp"
+#include "ParticleSystem.hpp"
 
 typedef std::unordered_map<OUTPUTID, std::vector<SP<IWidget>>> widgetMap_t;
 
@@ -49,6 +50,9 @@ class CRenderer {
     void                                  startFadeIn();
     void                                  startFadeOut(bool unlock = false, bool immediate = true);
 
+    void                                  startParticleFadeIn();
+    void                                  startParticleFadeOut(bool unlock, bool immediate);
+
   private:
     widgetMap_t               widgets;
 
@@ -69,6 +73,8 @@ class CRenderer {
     PHLANIMVAR<float>         opacity;
 
     std::vector<GLint>        boundFBs;
+
+    UP<CParticleSystem>       m_particleSystem;
 };
 
 inline UP<CRenderer> g_pRenderer;

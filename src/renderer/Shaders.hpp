@@ -594,3 +594,39 @@ void main() {
     gl_FragColor = pixColor;
 }
 )#";
+inline const std::string PARTICLEVERTSRC = R"#(
+uniform mat3 proj;
+attribute vec2 pos;
+attribute vec2 velocity;
+attribute float size;
+attribute float life;
+varying float v_life;
+
+void main() {
+    gl_Position = vec4(proj * vec3(pos, 1.0), 1.0);
+    gl_PointSize = size;
+    v_life = life;
+})#";
+
+inline const std::string PARTICLEFRAGSRC = R"#(
+precision highp float;
+varying float v_life;
+uniform vec4 color;
+
+void main() {
+    // Cálculo de distancia al centro del punto
+    vec2 center = vec2(0.5, 0.5);
+    float dist = length(gl_PointCoord - center);
+    
+    // Forma suave con borde difuminado
+    float alpha = smoothstep(0.5, 0.35, dist) * v_life * color.a;
+    
+    // Efecto de brillo interior (como en Devs)
+    vec3 particleColor = color.rgb;
+    if (dist < 0.2) {
+        float glow = 1.0 - dist / 0.2;
+        particleColor += vec3(0.2, 0.1, 0.05) * glow * glow;
+    }
+    
+    gl_FragColor = vec4(particleColor, alpha);
+})#";

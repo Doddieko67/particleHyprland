@@ -231,6 +231,13 @@ CRenderer::SRenderFeedback CRenderer::renderLock(const CSessionLockSurface& surf
 
     glDisable(GL_BLEND);
 
+    if (m_particleSystem) {
+        // Actualizar y renderizar partículas
+        m_particleSystem->update(1.0f / 60.0f); // O usar delta tiempo real
+        m_particleSystem->render(opacity->value());
+        feedback.needsFrame = true;
+    }
+
     return feedback;
 }
 
@@ -621,4 +628,57 @@ void CRenderer::startFadeOut(bool unlock, bool immediate) {
 
     if (unlock)
         opacity->setCallbackOnEnd([](auto) { g_pHyprlock->releaseSessionLock(); }, true);
+}
+
+void CRenderer::startParticleFadeIn() {
+    Debug::log(LOG, "Starting particle fade in");
+
+    // Capturar la pantalla actual
+    CFramebuffer screenCapture;
+    screenCapture.alloc(viewport.x, viewport.y);
+    // ... capturar la pantalla actual ...
+
+    // Inicializar sistema de partículas
+    m_particleSystem = makeUnique<CParticleSystem>(Vector2D(viewport.x, viewport.y));
+    m_particleSystem->seed(screenCapture.m_cTex, 10000); // Ajustar número de partículas
+
+    // Callback para cuando termine
+    g_pHyprlock->addTimer(
+        std::chrono::seconds(2),
+        [this](auto, auto) {
+            m_particleSystem.reset();
+            opacity->setValueAndWarp(1.0f);
+        },
+        nullptr);
+}
+
+void CRenderer::startParticleFadeOut(bool unlock, bool immediate) {
+    Debug::log(LOG, "Starting particle fade out");
+
+    if (immediate) {
+        opacity->setValueAndWarp(0.f);
+        if (unlock)
+            g_pHyprlock->releaseSessionLock();
+        return;
+    }
+
+    // Capturar la pantalla actual
+    CFramebuffer screenCapture;
+    screenCapture.alloc(viewport.x, viewport.y);
+    // ... capturar la pantalla actual ...
+
+    // Inicializar sistema de partículas
+    m_particleSystem = makeUnique<CParticleSystem>(Vector2D(viewport.x, viewport.y));
+    m_particleSystem->seed(screenCapture.m_cTex, 10000);
+
+    // Callback para cuando termine
+    g_pHyprlock->addTimer(
+        std::chrono::seconds(2),
+        [this, unlock](auto, auto) {
+            m_particleSystem.reset();
+            opacity->setValueAndWarp(0.0f);
+            if (unlock)
+                g_pHyprlock->releaseSessionLock();
+        },
+        nullptr);
 }
