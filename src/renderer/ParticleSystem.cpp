@@ -1,3 +1,42 @@
+#include "ParticleSystem.hpp"
+#include "../helpers/Log.hpp"
+#include "../core/hyprlock.hpp"
+#include <random>
+#include <algorithm>
+#include <ctime>
+#include <cmath>
+#include <GLES3/gl32.h>
+
+CParticleSystem::CParticleSystem(const Vector2D& screenSize) : m_screenSize(screenSize) {
+    // Inicializar generador de números aleatorios
+    std::random_device rd;
+    m_rng = std::mt19937(rd());
+
+    // Cargar shader para partículas
+    m_shader.program    = createProgram(PARTICLEVERTSRC, PARTICLEFRAGSRC);
+    m_shader.proj       = glGetUniformLocation(m_shader.program, "proj");
+    m_shader.color      = glGetUniformLocation(m_shader.program, "color");
+    m_shader.posAttrib  = glGetAttribLocation(m_shader.program, "pos");
+    m_shader.velAttrib  = glGetAttribLocation(m_shader.program, "velocity");
+    m_shader.sizeAttrib = glGetAttribLocation(m_shader.program, "size");
+    m_shader.lifeAttrib = glGetAttribLocation(m_shader.program, "life");
+
+    // Crear VBO
+    glGenBuffers(1, &m_vbo);
+}
+
+CParticleSystem::~CParticleSystem() {
+    if (m_vbo != 0) {
+        glDeleteBuffers(1, &m_vbo);
+        m_vbo = 0;
+    }
+
+    if (m_shader.program != 0) {
+        glDeleteProgram(m_shader.program);
+        m_shader.program = 0;
+    }
+}
+
 void CParticleSystem::seed(const CTexture& sourceTexture, int particleCount) {
     // Obtener datos de la textura
     int width  = sourceTexture.m_vSize.x;
@@ -12,22 +51,20 @@ void CParticleSystem::seed(const CTexture& sourceTexture, int particleCount) {
     m_particles.reserve(particleCount);
 
     // Distribuciones aleatorias
-    std::random_device                    rd;
-    std::mt19937                          gen(rd());
-    std::uniform_real_distribution<float> velDist(-50.0f, 50.0f); // Velocidad
-    std::uniform_real_distribution<float> sizeDist(2.0f, 5.0f);   // Tamaño
+    std::uniform_real_distribution<float> velDist(-50.0f, 50.0f); // Velocidad inicial
+    std::uniform_real_distribution<float> sizeDist(2.0f, 5.0f);   // Tamaño de partícula
     std::uniform_real_distribution<float> lifeDist(0.8f, 1.0f);   // Vida inicial
 
     // Contador de intentos para evitar bucles infinitos
     int attempts    = 0;
     int maxAttempts = particleCount * 5;
 
-    while (m_particles.size() < particleCount && attempts < maxAttempts) {
+    while (m_particles.size() < (size_t)particleCount && attempts < maxAttempts) {
         attempts++;
 
         // Elegir un píxel aleatorio
-        int x   = gen() % width;
-        int y   = gen() % height;
+        int x   = m_rng() % width;
+        int y   = m_rng() % height;
         int idx = (y * width + x) * 4;
 
         // Verificar si es transparente
@@ -37,12 +74,13 @@ void CParticleSystem::seed(const CTexture& sourceTexture, int particleCount) {
 
         // Crear partícula
         Particle p;
-        p.position = Vector2D(x, y);
-        p.velocity = Vector2D(velDist(gen), velDist(gen));
-        p.size     = sizeDist(gen);
-        p.life     = lifeDist(gen);
+        p.position     = Vector2D(x, y);
+        p.velocity     = Vector2D(velDist(m_rng), velDist(m_rng));
+        p.size         = sizeDist(m_rng);
+        p.originalSize = p.size;
+        p.life         = lifeDist(m_rng);
 
-        // Guardar color de la partícula (opcional, si quieres mantener el color original)
+        // Guardar color de la partícula (preservando el color original)
         p.color.r = pixels[idx] / 255.0f;
         p.color.g = pixels[idx + 1] / 255.0f;
         p.color.b = pixels[idx + 2] / 255.0f;
@@ -51,34 +89,10 @@ void CParticleSystem::seed(const CTexture& sourceTexture, int particleCount) {
         m_particles.push_back(p);
     }
 
-    // Si necesitas VBO para renderizar
-    if (m_particles.empty())
-        return;
-
-    // Crear o actualizar VBO
-    if (m_vbo == 0) {
-        glGenBuffers(1, &m_vbo);
-    }
+    Debug::log(LOG, "Sistema de partículas inicializado con {} partículas", m_particles.size());
 
     // Preparar datos para el VBO
-    std::vector<float> vboData;
-    vboData.reserve(m_particles.size() * 6); // posX, posY, velX, velY, size, life
-
-    for (const auto& p : m_particles) {
-        vboData.push_back(p.position.x);
-        vboData.push_back(p.position.y);
-        vboData.push_back(p.velocity.x);
-        vboData.push_back(p.velocity.y);
-        vboData.push_back(p.size);
-        vboData.push_back(p.life);
-    }
-
-    // Subir datos al VBO
-    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    glBufferData(GL_ARRAY_BUFFER, vboData.size() * sizeof(float), vboData.data(), GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    Debug::log(LOG, "Particle system seeded with {} particles", m_particles.size());
+    updateVBO();
 }
 
 void CParticleSystem::update(float deltaTime) {
@@ -130,28 +144,10 @@ void CParticleSystem::update(float deltaTime) {
     // Eliminar partículas muertas
     m_particles.erase(std::remove_if(m_particles.begin(), m_particles.end(), [](const Particle& p) { return p.life <= 0.0f; }), m_particles.end());
 
-    // Actualizar VBO con nuevos datos
-    if (m_particles.empty())
-        return;
-
-    std::vector<float> vboData;
-    vboData.reserve(m_particles.size() * 6);
-
-    for (const auto& p : m_particles) {
-        vboData.push_back(p.position.x);
-        vboData.push_back(p.position.y);
-        vboData.push_back(p.velocity.x);
-        vboData.push_back(p.velocity.y);
-        vboData.push_back(p.size);
-        vboData.push_back(p.life);
-    }
-
-    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    glBufferData(GL_ARRAY_BUFFER, vboData.size() * sizeof(float), vboData.data(), GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    // Actualizar VBO
+    updateVBO();
 }
 
-// Método adicional para renderizar las partículas
 void CParticleSystem::render(float globalOpacity) {
     if (m_particles.empty())
         return;
@@ -165,7 +161,7 @@ void CParticleSystem::render(float globalOpacity) {
     Mat3x3 projectionMatrix = Mat3x3::outputProjection(m_screenSize, HYPRUTILS_TRANSFORM_NORMAL);
     glUniformMatrix3fv(m_shader.proj, 1, GL_TRUE, projectionMatrix.getMatrix().data());
 
-    // Color base (multiplicado por el color de cada partícula)
+    // Color base (ajustado por la opacidad global)
     float baseColor[4] = {1.0f, 1.0f, 1.0f, globalOpacity};
     glUniform4fv(m_shader.color, 1, baseColor);
 
@@ -176,7 +172,7 @@ void CParticleSystem::render(float globalOpacity) {
     glEnableVertexAttribArray(m_shader.posAttrib);
     glVertexAttribPointer(m_shader.posAttrib, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
 
-    // Velocidad (si se usa en el shader para efectos)
+    // Velocidad (para efectos en el shader)
     glEnableVertexAttribArray(m_shader.velAttrib);
     glVertexAttribPointer(m_shader.velAttrib, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(2 * sizeof(float)));
 
@@ -201,4 +197,45 @@ void CParticleSystem::render(float globalOpacity) {
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glUseProgram(0);
+}
+
+void CParticleSystem::updateVBO() {
+    if (m_particles.empty())
+        return;
+
+    // Preparar datos para el VBO
+    std::vector<float> vboData;
+    vboData.reserve(m_particles.size() * 6); // posX, posY, velX, velY, size, life
+
+    for (const auto& p : m_particles) {
+        vboData.push_back(p.position.x);
+        vboData.push_back(p.position.y);
+        vboData.push_back(p.velocity.x);
+        vboData.push_back(p.velocity.y);
+        vboData.push_back(p.size);
+        vboData.push_back(p.life);
+    }
+
+    // Subir datos al VBO
+    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+    glBufferData(GL_ARRAY_BUFFER, vboData.size() * sizeof(float), vboData.data(), GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void CHyprlock::unlock() {
+    if (!m_bLocked) {
+        Debug::log(WARN, "Unlock called, but not locked yet. This can happen when dpms is off during the grace period.");
+        return;
+    }
+
+    const bool IMMEDIATE = m_sCurrentDesktop != "Hyprland";
+
+    if (useParticleAnimation)
+        g_pRenderer->startParticleFadeOut(true, IMMEDIATE);
+    else
+        g_pRenderer->startFadeOut(true, IMMEDIATE);
+
+    m_bUnlockedCalled = true;
+
+    renderAllOutputs();
 }

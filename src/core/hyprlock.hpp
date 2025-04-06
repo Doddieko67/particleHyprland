@@ -32,6 +32,7 @@ class CHyprlock {
     CHyprlock(const std::string& wlDisplay, const bool immediate, const bool immediateRender);
     ~CHyprlock();
 
+    bool                             useParticleAnimation = false;
     void                             run();
 
     void                             unlock();

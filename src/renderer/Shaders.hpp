@@ -594,6 +594,10 @@ void main() {
     gl_FragColor = pixColor;
 }
 )#";
+
+// Añadir estos shaders en src/renderer/Shaders.hpp
+// Reemplazar las versiones existentes PARTICLEVERTSRC y PARTICLEFRAGSRC
+
 inline const std::string PARTICLEVERTSRC = R"#(
 uniform mat3 proj;
 attribute vec2 pos;
@@ -601,16 +605,19 @@ attribute vec2 velocity;
 attribute float size;
 attribute float life;
 varying float v_life;
+varying vec2 v_velocity;
 
 void main() {
     gl_Position = vec4(proj * vec3(pos, 1.0), 1.0);
-    gl_PointSize = size;
+    gl_PointSize = size * (0.5 + life * 0.5);
     v_life = life;
+    v_velocity = velocity;
 })#";
 
 inline const std::string PARTICLEFRAGSRC = R"#(
 precision highp float;
 varying float v_life;
+varying vec2 v_velocity;
 uniform vec4 color;
 
 void main() {
@@ -618,15 +625,27 @@ void main() {
     vec2 center = vec2(0.5, 0.5);
     float dist = length(gl_PointCoord - center);
     
+    // Descartar píxeles fuera del círculo
+    if (dist > 0.5) discard;
+    
     // Forma suave con borde difuminado
     float alpha = smoothstep(0.5, 0.35, dist) * v_life * color.a;
     
     // Efecto de brillo interior (como en Devs)
-    vec3 particleColor = color.rgb;
+    vec3 particleColor = vec3(0.9, 0.7, 0.3); // Tono dorado característico de Devs
+    
+    // Añadir variación de color basada en la velocidad
+    float speed = length(v_velocity) * 0.02;
+    particleColor = mix(particleColor, vec3(0.9, 0.4, 0.2), speed); // Más anaranjado con más velocidad
+    
+    // Efecto de brillo interior
     if (dist < 0.2) {
         float glow = 1.0 - dist / 0.2;
-        particleColor += vec3(0.2, 0.1, 0.05) * glow * glow;
+        particleColor += vec3(0.3, 0.2, 0.1) * glow * glow;
     }
     
-    gl_FragColor = vec4(particleColor, alpha);
+    // Efecto de desvanecimiento en los bordes
+    float edgeFade = smoothstep(0.5, 0.4, dist);
+    
+    gl_FragColor = vec4(particleColor, alpha * edgeFade);
 })#";

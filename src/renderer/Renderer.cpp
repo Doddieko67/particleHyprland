@@ -202,6 +202,7 @@ CRenderer::CRenderer() {
 //
 CRenderer::SRenderFeedback CRenderer::renderLock(const CSessionLockSurface& surf) {
     projection = Mat3x3::outputProjection(surf.size, HYPRUTILS_TRANSFORM_NORMAL);
+    viewport   = surf.size;
 
     g_pEGL->makeCurrent(surf.eglSurface);
     glViewport(0, 0, surf.size.x, surf.size.y);
@@ -229,15 +230,22 @@ CRenderer::SRenderFeedback CRenderer::renderLock(const CSessionLockSurface& surf
 
     feedback.needsFrame = feedback.needsFrame || !asyncResourceGatherer->gathered;
 
-    glDisable(GL_BLEND);
-
     if (m_particleSystem) {
+        // Tiempo delta para la animación - podemos usar un valor fijo o calcular uno real
+        static auto lastFrameTime = std::chrono::high_resolution_clock::now();
+        auto        currentTime   = std::chrono::high_resolution_clock::now();
+        float       deltaTime     = std::chrono::duration<float>(currentTime - lastFrameTime).count();
+        lastFrameTime             = currentTime;
+
         // Actualizar y renderizar partículas
-        m_particleSystem->update(1.0f / 60.0f); // O usar delta tiempo real
+        m_particleSystem->update(deltaTime);
         m_particleSystem->render(opacity->value());
+
+        // Forzar re-renderizado continuo mientras el sistema de partículas esté activo
         feedback.needsFrame = true;
     }
 
+    glDisable(GL_BLEND);
     return feedback;
 }
 
@@ -631,29 +639,46 @@ void CRenderer::startFadeOut(bool unlock, bool immediate) {
 }
 
 void CRenderer::startParticleFadeIn() {
-    Debug::log(LOG, "Starting particle fade in");
+    Debug::log(LOG, "Iniciando animación de entrada con partículas");
 
     // Capturar la pantalla actual
+    viewport = {g_pHyprlock->m_vOutputs[0]->size.x, g_pHyprlock->m_vOutputs[0]->size.y};
+
     CFramebuffer screenCapture;
     screenCapture.alloc(viewport.x, viewport.y);
-    // ... capturar la pantalla actual ...
+
+    // Vincular el framebuffer actual para capturar la pantalla
+    GLint currentFB = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &currentFB);
+
+    screenCapture.bind();
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, currentFB);
+    glBlitFramebuffer(0, 0, viewport.x, viewport.y, 0, 0, viewport.x, viewport.y, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, currentFB);
 
     // Inicializar sistema de partículas
-    m_particleSystem = makeUnique<CParticleSystem>(Vector2D(viewport.x, viewport.y));
-    m_particleSystem->seed(screenCapture.m_cTex, 10000); // Ajustar número de partículas
+    m_particleSystem = makeUnique<CParticleSystem>(viewport);
+    m_particleSystem->seed(screenCapture.m_cTex, 8000); // Ajustar número de partículas
 
-    // Callback para cuando termine
+    // Inicialmente ocultar la pantalla para que solo se vean las partículas
+    opacity->setValueAndWarp(0.0f);
+
+    // Callback para cuando termine la animación de partículas
     g_pHyprlock->addTimer(
-        std::chrono::seconds(2),
+        std::chrono::milliseconds(1500), // Duración de la animación
         [this](auto, auto) {
-            m_particleSystem.reset();
-            opacity->setValueAndWarp(1.0f);
+            // Desvanecer partículas y mostrar la pantalla normal
+            opacity->setConfig(g_pConfigManager->m_AnimationTree.getConfig("fadeIn"));
+            *opacity = 1.0f;
+
+            opacity->setCallbackOnEnd([this](auto) { m_particleSystem.reset(); }, true);
         },
         nullptr);
 }
 
 void CRenderer::startParticleFadeOut(bool unlock, bool immediate) {
-    Debug::log(LOG, "Starting particle fade out");
+    Debug::log(LOG, "Iniciando animación de salida con partículas");
 
     if (immediate) {
         opacity->setValueAndWarp(0.f);
@@ -663,20 +688,33 @@ void CRenderer::startParticleFadeOut(bool unlock, bool immediate) {
     }
 
     // Capturar la pantalla actual
+    viewport = {g_pHyprlock->m_vOutputs[0]->size.x, g_pHyprlock->m_vOutputs[0]->size.y};
+
     CFramebuffer screenCapture;
     screenCapture.alloc(viewport.x, viewport.y);
-    // ... capturar la pantalla actual ...
+
+    // Vincular el framebuffer actual para capturar la pantalla
+    GLint currentFB = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &currentFB);
+
+    screenCapture.bind();
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, currentFB);
+    glBlitFramebuffer(0, 0, viewport.x, viewport.y, 0, 0, viewport.x, viewport.y, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, currentFB);
 
     // Inicializar sistema de partículas
-    m_particleSystem = makeUnique<CParticleSystem>(Vector2D(viewport.x, viewport.y));
-    m_particleSystem->seed(screenCapture.m_cTex, 10000);
+    m_particleSystem = makeUnique<CParticleSystem>(viewport);
+    m_particleSystem->seed(screenCapture.m_cTex, 8000); // Ajustar número de partículas
 
-    // Callback para cuando termine
+    // Iniciar animación de desvanecimiento
+    *opacity = 0.0f;
+
+    // Callback para cuando termine la animación de partículas
     g_pHyprlock->addTimer(
-        std::chrono::seconds(2),
+        std::chrono::milliseconds(1500), // Duración de la animación
         [this, unlock](auto, auto) {
             m_particleSystem.reset();
-            opacity->setValueAndWarp(0.0f);
             if (unlock)
                 g_pHyprlock->releaseSessionLock();
         },

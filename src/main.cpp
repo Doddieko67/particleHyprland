@@ -16,6 +16,7 @@ void help() {
                  "  --immediate              - Lock immediately, ignoring any configured grace period\n"
                  "  --immediate-render       - Do not wait for resources before drawing the background\n"
                  "  --no-fade-in             - Disable the fade-in animation when the lock screen appears\n"
+                 "  --particles              - Use particle animation effect (Devs-style)\n"
                  "  -V, --version            - Show version information\n"
                  "  -h, --help               - Show this help message");
 }
@@ -45,6 +46,11 @@ int main(int argc, char** argv, char** envp) {
     bool                     noFadeIn        = false;
 
     std::vector<std::string> args(argv, argv + argc);
+
+    if (g_pHyprlock->useParticleAnimation)
+        g_pRenderer->startParticleFadeIn();
+    else
+        g_pRenderer->startFadeIn();
 
     for (std::size_t i = 1; i < args.size(); ++i) {
         const std::string arg = argv[i];
@@ -85,6 +91,9 @@ int main(int argc, char** argv, char** envp) {
 
         else if (arg == "--no-fade-in")
             noFadeIn = true;
+
+        else if (arg == "--particles")
+            g_pHyprlock->useParticleAnimation = true;
 
         else {
             std::println(stderr, "Unknown option: {}", arg);

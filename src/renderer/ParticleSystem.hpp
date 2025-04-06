@@ -1,3 +1,12 @@
+#pragma once
+
+#include <vector>
+#include <random>
+#include "../helpers/Math.hpp"
+#include "../helpers/Color.hpp"
+#include "../renderer/Texture.hpp"
+#include "../renderer/Shader.hpp"
+
 struct Particle {
     Vector2D   position;
     Vector2D   velocity;
@@ -27,4 +36,7 @@ class CParticleSystem {
 
     // Para generación de números aleatorios
     std::mt19937 m_rng;
+
+    // Método auxiliar para actualizar el VBO
+    void updateVBO();
 };
