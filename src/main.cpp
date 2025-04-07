@@ -41,16 +41,12 @@ static void printVersion() {
 int main(int argc, char** argv, char** envp) {
     std::string              configPath;
     std::string              wlDisplay;
-    bool                     immediate       = false;
-    bool                     immediateRender = false;
-    bool                     noFadeIn        = false;
+    bool                     immediate        = false;
+    bool                     immediateRender  = false;
+    bool                     noFadeIn         = false;
+    bool                     useParticlesFlag = false;
 
     std::vector<std::string> args(argv, argv + argc);
-
-    if (g_pHyprlock->useParticleAnimation)
-        g_pRenderer->startParticleFadeIn();
-    else
-        g_pRenderer->startFadeIn();
 
     for (std::size_t i = 1; i < args.size(); ++i) {
         const std::string arg = argv[i];
@@ -93,7 +89,7 @@ int main(int argc, char** argv, char** envp) {
             noFadeIn = true;
 
         else if (arg == "--particles")
-            g_pHyprlock->useParticleAnimation = true;
+            useParticlesFlag = true;
 
         else {
             std::println(stderr, "Unknown option: {}", arg);
@@ -121,6 +117,11 @@ int main(int argc, char** argv, char** envp) {
 
     try {
         g_pHyprlock = makeUnique<CHyprlock>(wlDisplay, immediate, immediateRender);
+
+        if (useParticlesFlag) {
+            g_pHyprlock->useParticleAnimation = true;
+        }
+
         g_pHyprlock->run();
     } catch (const std::exception& ex) {
         Debug::log(CRIT, "Hyprlock threw: {}", ex.what());

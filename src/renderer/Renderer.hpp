@@ -12,6 +12,7 @@
 #include "widgets/IWidget.hpp"
 #include "Framebuffer.hpp"
 #include "ParticleSystem.hpp"
+#include <GLES3/gl32.h>
 
 typedef std::unordered_map<OUTPUTID, std::vector<SP<IWidget>>> widgetMap_t;
 
@@ -29,6 +30,8 @@ class CRenderer {
         std::optional<CHyprColor> colorize;
         float                     boostA = 1.0;
     };
+
+    GLuint          createProgram(const std::string& vert, const std::string& frag);
 
     SRenderFeedback renderLock(const CSessionLockSurface& surf);
 
@@ -75,6 +78,9 @@ class CRenderer {
     std::vector<GLint>        boundFBs;
 
     UP<CParticleSystem>       m_particleSystem;
+
+    Vector2D                  viewport;
+    bool                      needsInitialParticleSeed = false;
 };
 
 inline UP<CRenderer> g_pRenderer;

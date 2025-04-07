@@ -41,7 +41,7 @@ GLuint compileShader(const GLuint& type, std::string src) {
     return shader;
 }
 
-GLuint createProgram(const std::string& vert, const std::string& frag) {
+GLuint CRenderer::createProgram(const std::string& vert, const std::string& frag) {
     auto vertCompiled = compileShader(GL_VERTEX_SHADER, vert);
 
     RASSERT(vertCompiled, "Compiling shader failed. VERTEX NULL! Shader source:\n\n{}", vert);
@@ -652,10 +652,43 @@ void CRenderer::startParticleFadeIn() {
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &currentFB);
 
     screenCapture.bind();
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, currentFB);
+
+    // --- INICIO: Verificación adicional ---
+    GLenum drawStatus = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+    if (drawStatus != GL_FRAMEBUFFER_COMPLETE) {
+        Debug::log(CRIT, "[gl] Framebuffer de DIBUJO (screenCapture) INCOMPLETO antes de blit! Status: 0x%x", drawStatus);
+        // Aquí podrías añadir más detalles o abortar si quieres
+    }
+    // --- FIN: Verificación adicional ---
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, currentFB); // Vincula ventana a GL_READ_FRAMEBUFFER
+
+    // --- INICIO: Verificación adicional ---
+    GLenum readStatus = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
+    if (readStatus != GL_FRAMEBUFFER_COMPLETE) {
+        Debug::log(CRIT, "[gl] Framebuffer de LECTURA (ventana/currentFB) INCOMPLETO antes de blit! Status: 0x%x", readStatus);
+        // Aquí podrías añadir más detalles o abortar si quieres
+    }
+    // --- FIN: Verificación adicional ---
+
+    // Comprobar errores GL *antes* de la llamada crítica
+    GLenum glErr = glGetError();
+    if (glErr != GL_NO_ERROR) {
+        Debug::log(WARN, "[gl] Error de GL *antes* de glBlitFramebuffer: 0x%x", glErr);
+    }
+
+    Debug::log(LOG, "[gl] Intentando glBlitFramebuffer desde READ FB %d hacia DRAW FB %d", currentFB, screenCapture.m_iFb);
     glBlitFramebuffer(0, 0, viewport.x, viewport.y, 0, 0, viewport.x, viewport.y, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, currentFB);
+    // Comprobar errores GL *después* de la llamada crítica
+    glErr = glGetError();
+    if (glErr != GL_NO_ERROR) {
+        // Esto debería imprimir GL_INVALID_FRAMEBUFFER_OPERATION (0x0506) si es el error esperado
+        Debug::log(CRIT, "[gl] Error de GL *después* de glBlitFramebuffer: 0x%x", glErr);
+        // Considera añadir más logs o abortar aquí para facilitar la depuración
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, currentFB); // Restaurar
 
     // Inicializar sistema de partículas
     m_particleSystem = makeUnique<CParticleSystem>(viewport);

@@ -70,6 +70,10 @@ class CShader {
     GLint colorizeTint = -1;
     GLint boostA       = -1;
 
+    GLint velAttrib  = -1;
+    GLint sizeAttrib = -1;
+    GLint lifeAttrib = -1;
+
     GLint getUniformLocation(const std::string&);
 
     void  destroy();

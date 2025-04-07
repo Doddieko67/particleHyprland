@@ -414,6 +414,14 @@ void CHyprlock::run() {
         }
     });
 
+    if (this->useParticleAnimation) { // 'this->' es opcional aquí
+        Debug::log(LOG, "[core] Starting particle fade-in animation.");
+        g_pRenderer->startParticleFadeIn();
+    } else {
+        Debug::log(LOG, "[core] Starting standard fade-in animation.");
+        g_pRenderer->startFadeIn(); // La llamada que probablemente tenías originalmente
+    }
+
     m_sLoopState.event = true; // let it process once
     g_pRenderer->startFadeIn();
 
@@ -500,7 +508,11 @@ void CHyprlock::unlock() {
 
     const bool IMMEDIATE = m_sCurrentDesktop != "Hyprland";
 
-    g_pRenderer->startFadeOut(true, IMMEDIATE);
+    if (useParticleAnimation && g_pRenderer)
+        g_pRenderer->startParticleFadeOut(true, IMMEDIATE);
+    else if (g_pRenderer)
+        g_pRenderer->startFadeOut(true, IMMEDIATE);
+
     m_bUnlockedCalled = true;
 
     renderAllOutputs();

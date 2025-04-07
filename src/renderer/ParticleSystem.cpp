@@ -1,3 +1,11 @@
+#ifndef GL_POINT_SPRITE
+#define GL_POINT_SPRITE 0x8861
+#endif
+
+#ifndef GL_PROGRAM_POINT_SIZE
+#define GL_PROGRAM_POINT_SIZE 0x8642
+#endif
+
 #include "ParticleSystem.hpp"
 #include "../helpers/Log.hpp"
 #include "../core/hyprlock.hpp"
@@ -6,6 +14,8 @@
 #include <ctime>
 #include <cmath>
 #include <GLES3/gl32.h>
+#include "Shaders.hpp"
+#include "Renderer.hpp"
 
 CParticleSystem::CParticleSystem(const Vector2D& screenSize) : m_screenSize(screenSize) {
     // Inicializar generador de números aleatorios
@@ -13,7 +23,7 @@ CParticleSystem::CParticleSystem(const Vector2D& screenSize) : m_screenSize(scre
     m_rng = std::mt19937(rd());
 
     // Cargar shader para partículas
-    m_shader.program    = createProgram(PARTICLEVERTSRC, PARTICLEFRAGSRC);
+    m_shader.program    = CRenderer().createProgram(PARTICLEVERTSRC, PARTICLEFRAGSRC);
     m_shader.proj       = glGetUniformLocation(m_shader.program, "proj");
     m_shader.color      = glGetUniformLocation(m_shader.program, "color");
     m_shader.posAttrib  = glGetAttribLocation(m_shader.program, "pos");
@@ -45,7 +55,19 @@ void CParticleSystem::seed(const CTexture& sourceTexture, int particleCount) {
     // Crear buffer temporal para leer los píxeles
     std::vector<uint8_t> pixels(width * height * 4); // RGBA
     glBindTexture(GL_TEXTURE_2D, sourceTexture.m_iTexID);
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    GLuint tempFBO;
+    glGenFramebuffers(1, &tempFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, tempFBO);
+
+    // Enlaza la textura al framebuffer
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sourceTexture.m_iTexID, 0);
+
+    // Lee los píxeles
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+    // Limpia
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &tempFBO);
 
     m_particles.clear();
     m_particles.reserve(particleCount);
@@ -109,7 +131,7 @@ void CParticleSystem::update(float deltaTime) {
     for (auto& p : m_particles) {
         // Calcular dirección al centro
         Vector2D toCenter = center - p.position;
-        float    distance = toCenter.length();
+        float    distance = center.distance(p.position);
 
         // Evitar división por cero
         if (distance > 0.1f) {
@@ -220,22 +242,4 @@ void CParticleSystem::updateVBO() {
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(GL_ARRAY_BUFFER, vboData.size() * sizeof(float), vboData.data(), GL_DYNAMIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
-}
-
-void CHyprlock::unlock() {
-    if (!m_bLocked) {
-        Debug::log(WARN, "Unlock called, but not locked yet. This can happen when dpms is off during the grace period.");
-        return;
-    }
-
-    const bool IMMEDIATE = m_sCurrentDesktop != "Hyprland";
-
-    if (useParticleAnimation)
-        g_pRenderer->startParticleFadeOut(true, IMMEDIATE);
-    else
-        g_pRenderer->startFadeOut(true, IMMEDIATE);
-
-    m_bUnlockedCalled = true;
-
-    renderAllOutputs();
 }
